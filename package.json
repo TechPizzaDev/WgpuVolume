@@ -1,5 +1,8 @@
 {
   "name": "pages",
+  "dependencies": {
+    "gl-matrix": "^3.4.3"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   },
