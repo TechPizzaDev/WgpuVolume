@@ -10,7 +10,7 @@ export class Game extends App {
 
     accumBuffer!: Framebuffer;
 
-    drawUniformData = new ArrayBuffer(4 * 3);
+    drawUniformData = new ArrayBuffer(4 * 8);
     
     drawUniformBuffer!: WebGLBuffer;
     quadArray!: WebGLVertexArrayObject;
@@ -68,7 +68,7 @@ export class Game extends App {
     draw() {
         const gl = this.gl;
 
-        new Float32Array(this.drawUniformData, 8, 1).set([this.totalTime]);
+        new Float32Array(this.drawUniformData, 16, 1).set([this.totalTime]);
         gl.bufferData(gl.UNIFORM_BUFFER, this.drawUniformData, gl.DYNAMIC_DRAW);
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
