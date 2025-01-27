@@ -1,9 +1,12 @@
 import { watch } from "fs";
 
 import homepage from "./src/index.html";
-import { openHotReload, upgradeHotReload } from "./hot-reload-plugin";
+import * as hotReload from "./hot-reload-plugin";
 
 let watcher = watch("./src");
+watcher.on("change", () => {
+  hotReload.reloadAll();
+});
 
 Bun.serve({
   port: 3000,
@@ -20,20 +23,23 @@ Bun.serve({
   },
 
   async fetch(req) {
-    const upgraded = upgradeHotReload(this, req);
+    const upgraded = hotReload.upgrade(this, req);
     if (upgraded) {
       return upgraded;
     }
-    
+
     // Return 404 for unmatched routes
     return new Response("Not Found", { status: 404 });
   },
 
   websocket: {
     open(ws) {
-      openHotReload(ws, watcher);
+      hotReload.open(ws);
     },
     message(ws, message) {
+    },
+    close(ws, code, reason) {
+      hotReload.close(ws);
     }
   }
 });

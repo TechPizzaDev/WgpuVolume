@@ -1,5 +1,8 @@
-import { type FSWatcher } from "fs";
 import { plugin, type BunPlugin, type Server, type ServerWebSocket } from "bun";
+
+type ChangeCallback = (ws: ServerWebSocket<any>) => Promise<void>;
+
+const callbackMap = new Map<ServerWebSocket<any>, ChangeCallback>();
 
 const reloadCommand = "reload";
 
@@ -24,7 +27,7 @@ const myPlugin: BunPlugin = {
     target: "bun",
     setup({ onLoad }) {
         const liveReloadScript = makeLiveReloadScript(wsPath);
-        
+
         const rewriter = new HTMLRewriter();
         rewriter.onDocument({
             end(end) {
@@ -44,7 +47,7 @@ const myPlugin: BunPlugin = {
     },
 };
 
-export function upgradeHotReload(
+export function upgrade(
     server: Server,
     request: Request,
 ): Response | undefined {
@@ -62,10 +65,20 @@ export function upgradeHotReload(
     }
 }
 
-export function openHotReload<T>(ws: ServerWebSocket<T>, watcher: FSWatcher) {
-    watcher.on("change", async () => {
+export function open<T>(ws: ServerWebSocket<T>) {
+    callbackMap.set(ws, async (ws) => {
         ws.send(reloadCommand);
     });
+}
+
+export function reloadAll() {
+    for (let [ws, callback] of callbackMap) {
+        callback(ws);
+    }
+}
+
+export function close<T>(ws: ServerWebSocket<T>) {
+    callbackMap.delete(ws);
 }
 
 plugin(myPlugin);
