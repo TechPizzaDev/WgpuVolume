@@ -1,12 +1,26 @@
-import { watch } from "fs";
+import { watch, type FSWatcher } from "fs";
+import { join, normalize } from "path";
 
 import homepage from "./src/index.html";
 import * as hotReload from "./hot-reload-plugin";
 
-let watcher = watch("./src", { recursive: true });
-watcher.on("change", () => {
-  hotReload.reloadAll();
-});
+function registerWatcher(path: string, onChange: (path: string) => Promise<void>): FSWatcher {
+  let listener = async (_ev: string, filename: string | Buffer) => {
+    if (filename as string) {
+      let fullPath = join(path, filename as string);
+      let normPath = normalize(fullPath).replaceAll('\\', '/');
+      await onChange(normPath);
+    }
+  };
+
+  let watcher = watch(path, { recursive: true });
+  watcher.on("change", listener);
+  watcher.on("rename", listener);
+  return watcher;
+}
+
+registerWatcher("./src", async (path) => hotReload.notifyChange(path));
+registerWatcher("./assets", async (path) => hotReload.notifyChange(path));
 
 Bun.serve({
   port: 3000,
