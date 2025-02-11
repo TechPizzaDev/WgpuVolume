@@ -1,23 +1,39 @@
 import { Game } from "./Game";
+import { quitIfWebGPUNotAvailable } from "./GpuInit";
 
-const canvas = <HTMLCanvasElement>document.getElementById("gl-canvas");
+const adapter = await navigator.gpu?.requestAdapter();
+const device = await adapter?.requestDevice();
+quitIfWebGPUNotAvailable(adapter, device);
+
+const canvas = document.getElementById("main-canvas") as HTMLCanvasElement;
 if (!canvas) {
     throw new Error("Failed to find canvas element.");
 }
 
+const devicePixelRatio = window.devicePixelRatio;
+canvas.width = canvas.clientWidth * devicePixelRatio;
+canvas.height = canvas.clientHeight * devicePixelRatio;
+
+const context = canvas.getContext("webgpu");
+if (!context) {
+    throw new Error("Failed to get WebGPU context from canvas.");
+}
+
+const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
+context.configure({
+    device,
+    format: presentationFormat,
+});
+
 let needsToResize = false;
-let nextWidth = 0;
-let nextHeight = 0;
+let nextWidth = canvas.width;
+let nextHeight = canvas.height;
 const resizeObserver = new ResizeObserver(resizeCallback);
 resizeObserver.observe(canvas);
 
-const gl = canvas.getContext("webgl2", { antialias: false });
-if (!gl) {
-    throw new Error("WebGL 2 is unavailable on this system.");
-}
-
-const app = new Game();
-await app.createResources(gl);
+const app = new Game(presentationFormat);
+await app.createResources(device);
+app.resizeFramebuffer(canvas.width, canvas.height);
 
 let previousTime = performance.now();
 requestAnimationFrame(animate);
@@ -32,12 +48,15 @@ function animate(time: DOMHighResTimeStamp) {
         console.log(`Resizing canvas from ${canvas.width}x${canvas.height} to ${nextWidth}x${nextHeight}.`);
         canvas.width = nextWidth;
         canvas.height = nextHeight;
-
-        app.resizeFramebuffer();
+        
+        app.resizeFramebuffer(nextWidth, nextHeight);
     }
 
     app.update(deltaTime);
-    app.draw();
+
+    const canvasTexture = context!.getCurrentTexture();
+    app.draw(canvasTexture);
+
     requestAnimationFrame(animate);
 }
 
@@ -48,16 +67,16 @@ function resizeCallback(entries: ResizeObserverEntry[], observer: ResizeObserver
     if (entry.devicePixelContentBoxSize) {
         width = entry.devicePixelContentBoxSize[0].inlineSize;
         height = entry.devicePixelContentBoxSize[0].blockSize;
-    } else if (entry.contentBoxSize) {
+    } else {
         // fallback for Safari that will not always be correct
         const pixelRatio = window.devicePixelRatio;
         width = Math.round(entry.contentBoxSize[0].inlineSize * pixelRatio);
         height = Math.round(entry.contentBoxSize[0].blockSize * pixelRatio);
-    } else {
-        return;
     }
 
-    nextWidth = width;
-    nextHeight = height;
-    needsToResize = true;
+    if (canvas.width != width || canvas.height != height) {
+        nextWidth = width;
+        nextHeight = height;
+        needsToResize = true;
+    }
 }
