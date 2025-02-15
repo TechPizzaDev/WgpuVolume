@@ -1,5 +1,5 @@
 struct Uniforms {
-  inverseModelViewProjectionMatrix: mat4x4f,
+  inverseModelViewProjectionMatrix: mat4x4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -37,6 +37,7 @@ fn vertex_main(
     var far = uniforms.inverseModelViewProjectionMatrix * vec4f(xy, 1f, 1f);
     near /= near.w;
     far /= far.w;
+    
     return VertexOutput(
         vec4f(xy, 0f, 1f),
         near.xyz,
@@ -55,7 +56,7 @@ fn fragment_main(
         let texCoord = (rayPos.xyz + 1f) * 0.5f;
         let sample = textureSample(myTexture, mySampler, texCoord).r * 4f / f32(NumSteps);
         let intersects = all(rayPos.xyz < vec3f(1f)) && all(rayPos.xyz > vec3f(-1f));
-        result += select(0f, (1f - result) * sample, intersects && result < 1f);
+        result += select(0f, (1f - result) * sample, intersects);
         rayPos += step;
     }
     return vec4f(vec3f(result), 1f);

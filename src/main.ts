@@ -1,6 +1,7 @@
 import { Game } from "./Game";
 import { quitIfWebGPUNotAvailable } from "./GpuInit";
 import * as hotReload from "./HotReload";
+import { ConstantProvider, ValueProvider } from "./Provider";
 
 hotReload.connect();
 
@@ -21,6 +22,8 @@ const context = canvas.getContext("webgpu");
 if (!context) {
     throw new Error("Failed to get WebGPU context from canvas.");
 }
+const contextProvider = new ConstantProvider(context);
+const currentTextureProvider = contextProvider.map(ctx => ctx.getCurrentTexture());
 
 const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
 context.configure({
@@ -34,33 +37,47 @@ let nextHeight = canvas.height;
 const resizeObserver = new ResizeObserver(resizeCallback);
 resizeObserver.observe(canvas);
 
-const app = new Game(presentationFormat);
-await app.createResources(device);
-app.resizeFramebuffer(canvas.width, canvas.height);
+const presentationProvider = new ValueProvider({
+    width: nextWidth,
+    height: nextHeight,
+    format: presentationFormat
+});
+
+const app = new Game(
+    new ValueProvider(device),
+    presentationProvider);
+
+hotReload.observeAssetChange((path) => app.reloadAsset(path));
 
 let previousTime = performance.now();
-requestAnimationFrame(animate);
+let time = previousTime;
 
-function animate(time: DOMHighResTimeStamp) {
+while (true) {
     const deltaTime = (time - previousTime) / 1000.0;
     previousTime = time;
+    await run(deltaTime);
+    time = await new Promise(requestAnimationFrame);
+}
 
+async function run(deltaTime: number) {
     if (needsToResize) {
         needsToResize = false;
 
         console.log(`Resizing canvas from ${canvas.width}x${canvas.height} to ${nextWidth}x${nextHeight}.`);
         canvas.width = nextWidth;
         canvas.height = nextHeight;
-        
-        app.resizeFramebuffer(nextWidth, nextHeight);
+
+        presentationProvider.set({
+            width: nextWidth,
+            height: nextHeight,
+            format: presentationFormat
+        });
     }
 
-    app.update(deltaTime);
+    await app.update(deltaTime);
 
-    const canvasTexture = context!.getCurrentTexture();
-    app.draw(canvasTexture);
-
-    requestAnimationFrame(animate);
+    currentTextureProvider.invalidate();
+    await app.draw(currentTextureProvider);
 }
 
 function resizeCallback(entries: ResizeObserverEntry[], observer: ResizeObserver) {
