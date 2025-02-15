@@ -1,5 +1,8 @@
 import { Game } from "./Game";
 import { quitIfWebGPUNotAvailable } from "./GpuInit";
+import * as hotReload from "./HotReload";
+
+hotReload.connect();
 
 const adapter = await navigator.gpu?.requestAdapter();
 const device = await adapter?.requestDevice();

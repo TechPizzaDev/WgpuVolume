@@ -75,7 +75,8 @@ const fail = (() => {
     let output: ErrorOutput | undefined;
 
     return (message: string) => {
-        if (!output) output = createErrorOutput();
+        if (!output) 
+            output = createErrorOutput();
 
         output.show(message);
         throw new Error(message);
