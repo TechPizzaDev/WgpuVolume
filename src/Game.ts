@@ -179,20 +179,9 @@ export class Game extends App {
             'assets/img/volume/t1_icbm_normal_1mm_pn0_rf0_180x216x180_uint8_1x1.bin-gz';
 
         const data = this.fetchProvider(dataPath).map(async resp => {
-            // Fetch the compressed data
-            const compressedArrayBuffer = await (await resp).arrayBuffer();
-
-            // Decompress the data using DecompressionStream for gzip format
-            const decompressionStream = new DecompressionStream('gzip');
-            const decompressedStream = new Response(
-                compressedArrayBuffer
-            ).body!.pipeThrough(decompressionStream);
-
-            const decompressedArrayBuffer = await new Response(
-                decompressedStream
-            ).arrayBuffer();
-
-            return decompressedArrayBuffer;
+            const response = await resp;
+            const dataStream = response.body!.pipeThrough(new DecompressionStream('gzip'));
+            return await new Response(dataStream).arrayBuffer();
         });
 
         return this.gpuDevice.join([data]).map(async ([gpu, data]) => {
