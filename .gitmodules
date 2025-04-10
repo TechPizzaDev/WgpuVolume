@@ -1,0 +1,3 @@
+[submodule "submodules/SharpFastNoise2"]
+	path = submodules/SharpFastNoise2
+	url = https://github.com/TechPizzaDev/SharpFastNoise2
