@@ -193,7 +193,7 @@ export class Game extends App {
         const blocksHigh = Math.ceil(height / blockLength);
         const bytesPerRow = blocksWide * bytesPerBlock;
         const dataPath =
-            'assets/img/volume/noise2.bin.gz';
+            'assets/img/volume/generated.bin.gz';
 
         const data = this.fetchProvider(dataPath).map(async resp => {
             const response = await resp;

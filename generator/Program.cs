@@ -14,8 +14,12 @@ class Program
 {
     static void Main(string[] args)
     {
+        string path = Path.GetFullPath("noise.bin.gz");
+
         Test<Vector128<float>, Vector128<int>, Sse2Functions,
-            Perlin<Vector128<float>, Vector128<int>, Sse2Functions>>("noise.bin.gz", 1234, 180, 216, 180, new());
+            Perlin<Vector128<float>, Vector128<int>, Sse2Functions>>(path, 1234, 180, 216, 180, new());
+
+        Console.Write(path);
     }
 
     static void Test<f32, i32, F, G>(string path, int seed, int width, int height, int depth, G generator)
@@ -38,7 +42,7 @@ class Program
 
         FileStream fs = new(path, FileMode.Create);
         Stream innerStream = path.EndsWith(".gz") ? new GZipStream(fs, CompressionLevel.Optimal, false) : fs;
-        
+
         using BinaryWriter writer = new(innerStream, Encoding.UTF8, false);
 
         for (int z = 0; z < depth; z++)

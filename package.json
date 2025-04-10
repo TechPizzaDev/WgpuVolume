@@ -11,6 +11,7 @@
     "typescript": "^5.7.3"
   },
   "scripts": {
+    "predev": "bun run prepare.ts",
     "dev": "bun run --hot dev.ts"
   }
 }
