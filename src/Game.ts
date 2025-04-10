@@ -55,7 +55,7 @@ export class Game extends App {
             });
 
         this.drawUniformBuffer = this.gpuDevice.map(gpu => gpu.createBuffer({
-            size: 4 * 16,
+            size: (4 * 16) + 16,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         }));
 
@@ -104,12 +104,17 @@ export class Game extends App {
         this.totalTime += deltaTime;
         const gpuDevice = this.gpuDevice.get();
 
-        const invMvpMat = mat4.identity();
         const viewTexture = this.viewTexture.get();
         const aspect = viewTexture.width / viewTexture.height;
-        this.getInverseMvpMatrix(this.totalTime, aspect, 2, 7, invMvpMat);
+        
+        const viewMat = this.getModelViewMatrix(this.totalTime);
+        const projMat = this.getProjMatrix(aspect, 2, 7);
+
+        const mvpMat = mat4.multiply(projMat, viewMat);
+        const invMvpMat = mat4.invert(mvpMat);
 
         gpuDevice.queue.writeBuffer(this.drawUniformBuffer.get(), 0, invMvpMat);
+        gpuDevice.queue.writeBuffer(this.drawUniformBuffer.get(), 16 * 4, new Float32Array([this.totalTime]));
     }
 
     override async draw(canvasTexture: Provider<GPUTexture>) {
@@ -139,30 +144,42 @@ export class Game extends App {
         gpuDevice.queue.submit([cmd.finish()]);
     }
 
-    getInverseMvpMatrix(
-        rotation: number,
-        aspect: number,
-        near: number,
-        far: number,
-        dst: Float32Array) {
+    getModelViewMatrix(rotation: number) {
         const viewMat = mat4.identity();
-        mat4.translate(viewMat, [0, 0, -4], viewMat);
+        mat4.translate(viewMat, [0, 0, -56], viewMat);
+
         mat4.rotate(
             viewMat,
-            [Math.sin(rotation), Math.cos(rotation), 0],
-            1,
+            [-1, 0, 0],
+            Math.PI * 0.33,
+            viewMat
+        );
+        
+        mat4.rotate(
+            viewMat,
+            [0, 0, 1],
+            rotation * 0.25,
             viewMat
         );
 
+        return viewMat;
+    }
+
+    getProjMatrix(
+        aspect: number,
+        near: number,
+        far: number) {
         const projMat = mat4.perspective(
-            (2 * Math.PI) / 5,
+            (2 * Math.PI) / 7,
             aspect,
             near,
             far
         );
-        const mvpMat = mat4.multiply(projMat, viewMat);
 
-        mat4.invert(mvpMat, dst);
+        const s = aspect * 25.05;
+        const projMat2 = mat4.ortho(-s, s, -s, s, near, far);
+
+        return projMat2;
     }
 
     loadVolumeTexture(): Provider<Promise<GPUTexture>> {
@@ -176,7 +193,7 @@ export class Game extends App {
         const blocksHigh = Math.ceil(height / blockLength);
         const bytesPerRow = blocksWide * bytesPerBlock;
         const dataPath =
-            'assets/img/volume/t1_icbm_normal_1mm_pn0_rf0_180x216x180_uint8_1x1.bin-gz';
+            'assets/img/volume/noise2.bin.gz';
 
         const data = this.fetchProvider(dataPath).map(async resp => {
             const response = await resp;
