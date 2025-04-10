@@ -2,10 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.CompilerServices;
+using System.IO.Compression;
 using System.Runtime.Intrinsics;
+using System.Text;
 using SharpFastNoise2;
-using SharpFastNoise2.Distance;
 using SharpFastNoise2.Functions;
 using SharpFastNoise2.Generators;
 using ShellProgressBar;
@@ -15,7 +15,7 @@ class Program
     static void Main(string[] args)
     {
         Test<Vector128<float>, Vector128<int>, Sse2Functions,
-            Perlin<Vector128<float>, Vector128<int>, Sse2Functions>>("noise.bin", 1234, 180, 216, 180, new());
+            Perlin<Vector128<float>, Vector128<int>, Sse2Functions>>("noise.bin.gz", 1234, 180, 216, 180, new());
     }
 
     static void Test<f32, i32, F, G>(string path, int seed, int width, int height, int depth, G generator)
@@ -35,7 +35,11 @@ class Program
 
         var buffer32 = new int[width];
         var buffer8 = new byte[width];
-        using var writer = new BinaryWriter(new FileStream(path, FileMode.Create));
+
+        FileStream fs = new(path, FileMode.Create);
+        Stream innerStream = path.EndsWith(".gz") ? new GZipStream(fs, CompressionLevel.Optimal, false) : fs;
+        
+        using BinaryWriter writer = new(innerStream, Encoding.UTF8, false);
 
         for (int z = 0; z < depth; z++)
         {
@@ -51,7 +55,7 @@ class Program
 
                     f32 noise = generator.Gen(vx, vy, vz, vSeed);
 
-                    f32 scaled = F.Mul(F.Add(noise, F.Broad(1f)), F.Broad((float) (byte.MaxValue / 2.0)));
+                    f32 scaled = F.Mul(F.Add(noise, F.Broad(1f)), F.Broad((float)(byte.MaxValue / 2.0)));
                     i32 conv = F.Convert_i32(scaled);
                     F.Store(buffer32.AsSpan(x), conv);
                 }
@@ -76,7 +80,7 @@ class Program
             var b32 = Vector128.Create(src.Slice(4));
             var c32 = Vector128.Create(src.Slice(8));
             var d32 = Vector128.Create(src.Slice(12));
-            
+
             var a16 = Vector128.Narrow(a32, b32);
             var b16 = Vector128.Narrow(c32, d32);
 
@@ -88,7 +92,7 @@ class Program
 
         for (int i = 0; i < src.Length; i++)
         {
-            dst[i] = (byte) src[i]; 
+            dst[i] = (byte)src[i];
         }
     }
 }
