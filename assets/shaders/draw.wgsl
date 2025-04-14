@@ -67,17 +67,17 @@ fn frag_voxel(near: vec3f, step: vec3f) -> vec4f {
     let rayPos = near;
     let rayDir = step;
 
-    var mapPos = vec3i(floor(rayPos));
+    var mapPos = floor(rayPos);
     let deltaDist = abs(vec3f(length(rayDir)) / rayDir);
-    let rayStep = vec3i(sign(rayDir));
-    var sideDist = (sign(rayDir) * (vec3f(mapPos) - rayPos) + (sign(rayDir) * 0.5) + 0.5) * deltaDist;
+    let rayStep = sign(rayDir);
+    var sideDist = (sign(rayDir) * (mapPos - rayPos) + (sign(rayDir) * 0.5) + 0.5) * deltaDist;
 
     var mask: vec3<bool>;
     var count = 0u;
     var max = 0u;
     var i = 0u;
     for (; i < NumSteps; i++) {
-        let uv = ray_to_tex(vec3f(mapPos) / vec3f(16f));
+        let uv = ray_to_tex(mapPos / vec3f(16f));
         let intersects = all(uv <= vec3f(1f)) && all(uv >= vec3f(0f));
         if intersects {
             let off = (vec3f(sin(uniforms.time * 0.2f), 0f, 0f) + 1f) * 0.25;
@@ -95,7 +95,7 @@ fn frag_voxel(near: vec3f, step: vec3f) -> vec4f {
 
         mask = sideDist <= min(sideDist.yzx, sideDist.zxy);
         sideDist += vec3f(mask) * deltaDist;
-        mapPos += vec3i(vec3f(mask)) * rayStep;
+        mapPos += vec3f(mask) * rayStep;
     }
 
     if i == NumSteps {
