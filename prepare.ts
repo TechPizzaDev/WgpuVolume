@@ -1,10 +1,22 @@
 import { $, file } from "bun";
 import { resolve } from "path";
+import { parseArgs } from "util";
 
 const outPath = "./assets/img/volume/generated.bin.gz";
 
+const { values, positionals } = parseArgs({
+  args: Bun.argv,
+  options: {
+    regen: {
+      type: 'boolean',
+    },
+  },
+  strict: true,
+  allowPositionals: true,
+});
+
 try {
-    if (await file(outPath).exists()) {
+    if (!values.regen && await file(outPath).exists()) {
         console.log(`Noise file exists \n  at "${resolve(outPath)}"`);
     } else {
         $.cwd("./generator");
