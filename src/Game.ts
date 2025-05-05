@@ -1,9 +1,10 @@
-import { mat4 } from "wgpu-matrix";
+import { mat4, type Vec3 } from "wgpu-matrix";
 import { App, type PresentationDescriptor } from "./App";
 import { ValueProvider, type Provider } from "./Provider";
 
 export class Game extends App {
     totalTime: number = 0;
+    viewPosition: Vec3 = new Float32Array([0, 0, -2, 0]);
 
     sampleCount = new ValueProvider(4);
     viewTexture: Provider<GPUTexture>;
@@ -12,6 +13,7 @@ export class Game extends App {
 
     drawPipeline: Provider<Promise<GPURenderPipeline>>;
     drawUniformBuffer: Provider<GPUBuffer>;
+    sunInfoBuffer: Provider<GPUBuffer>;
     drawBindGroup: Provider<Promise<GPUBindGroup>>;
 
     constructor(
@@ -20,10 +22,10 @@ export class Game extends App {
         super(gpuDevice, presentation);
 
         this.sampler = gpuDevice.map(gpu => gpu.createSampler({
-            magFilter: "linear",
-            minFilter: "linear",
-            mipmapFilter: "linear",
-            maxAnisotropy: 16,
+            magFilter: "nearest",
+            minFilter: "nearest",
+            mipmapFilter: "nearest",
+            maxAnisotropy: 1,
         }));
 
         const drawShader = this.fetchShader("draw.wgsl");
@@ -41,12 +43,22 @@ export class Game extends App {
                         targets: [
                             {
                                 format: pres.format,
+                                blend: {
+                                    color: {
+                                        srcFactor: 'one',
+                                        dstFactor: 'one-minus-src-alpha'
+                                    },
+                                    alpha: {
+                                        srcFactor: 'one',
+                                        dstFactor: 'one-minus-src-alpha'
+                                    },
+                                }
                             },
                         ],
                     } : undefined,
                     primitive: {
                         topology: "triangle-list",
-                        cullMode: "back",
+                        cullMode: "front",
                     },
                     multisample: {
                         count: sampleCount
@@ -55,16 +67,21 @@ export class Game extends App {
             });
 
         this.drawUniformBuffer = this.gpuDevice.map(gpu => gpu.createBuffer({
-            size: (4 * 16) + 16,
+            size: (4 * 16) * 6 + (4 * 4) * 3,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         }));
+
+        this.sunInfoBuffer = this.gpuDevice.map(gpu => gpu.createBuffer({
+            size: (4 * 4) * 3,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        }))
 
         const volumeTexture = this.loadVolumeTexture();
 
         this.drawBindGroup = this.gpuDevice
-            .join([this.drawPipeline, this.drawUniformBuffer, this.sampler, volumeTexture])
+            .join([this.drawPipeline, this.drawUniformBuffer, this.sunInfoBuffer, this.sampler, volumeTexture])
             .map(async args => {
-                const [gpu, pipeline, uniform, sampler, texture] = await Promise.all(args);
+                const [gpu, pipeline, uniform, sunInfo, sampler, texture] = await Promise.all(args);
 
                 return gpu.createBindGroup({
                     layout: pipeline.getBindGroupLayout(0),
@@ -77,7 +94,9 @@ export class Game extends App {
                         },
                         {
                             binding: 1,
-                            resource: sampler,
+                            resource: {
+                                buffer: sunInfo,
+                            },
                         },
                         {
                             binding: 2,
@@ -106,15 +125,42 @@ export class Game extends App {
 
         const viewTexture = this.viewTexture.get();
         const aspect = viewTexture.width / viewTexture.height;
-        
-        const viewMat = this.getModelViewMatrix(this.totalTime);
-        const projMat = this.getProjMatrix(aspect, 2, 7);
 
-        const mvpMat = mat4.multiply(projMat, viewMat);
-        const invMvpMat = mat4.invert(mvpMat);
+        const modelMat = this.getModelMatrix(this.totalTime);
+        const invModelMat = mat4.invert(modelMat);
 
-        gpuDevice.queue.writeBuffer(this.drawUniformBuffer.get(), 0, invMvpMat);
-        gpuDevice.queue.writeBuffer(this.drawUniformBuffer.get(), 16 * 4, new Float32Array([this.totalTime]));
+        const viewMat = this.getViewMatrix();
+        const invViewMat = mat4.invert(viewMat);
+
+        const projMat = this.getProjMatrix(aspect, 1, 16);
+        const invProjMat = mat4.invert(projMat);
+
+        const uniform = this.drawUniformBuffer.get();
+        let i = 0;
+        gpuDevice.queue.writeBuffer(uniform, i, modelMat);
+        i += 16 * 4;
+        gpuDevice.queue.writeBuffer(uniform, i, invModelMat);
+        i += 16 * 4;
+        gpuDevice.queue.writeBuffer(uniform, i, viewMat);
+        i += 16 * 4;
+        gpuDevice.queue.writeBuffer(uniform, i, invViewMat);
+        i += 16 * 4;
+        gpuDevice.queue.writeBuffer(uniform, i, projMat);
+        i += 16 * 4;
+        gpuDevice.queue.writeBuffer(uniform, i, invProjMat);
+        i += 16 * 4;
+        gpuDevice.queue.writeBuffer(uniform, i, this.viewPosition);
+        i += 4 * 4;
+        gpuDevice.queue.writeBuffer(uniform, i, new Float32Array([0, 0, viewTexture.width, viewTexture.height]));
+        i += 4 * 4;
+        gpuDevice.queue.writeBuffer(uniform, i, new Float32Array([this.totalTime]));
+        i += 4 * 4;
+
+        gpuDevice.queue.writeBuffer(this.sunInfoBuffer.get(), 0, new Float32Array([
+            0, 0, 1, 0,
+            1, 1, 1, 0,
+            0.1, 0.1, 0.1, 0,
+        ]));
     }
 
     override async draw(canvasTexture: Provider<GPUTexture>) {
@@ -127,7 +173,7 @@ export class Game extends App {
             colorAttachments: [
                 {
                     view: this.viewTexture.get().createView(),
-                    clearValue: [0.5, 0.5, 0.5, 1.0],
+                    clearValue: [100 / 255.0, 149 / 255.0, 237 / 255.0, 1.0],
                     loadOp: "clear",
                     storeOp: "discard",
                     resolveTarget: canvasTexture.get().createView(),
@@ -139,28 +185,43 @@ export class Game extends App {
         const pass = cmd.beginRenderPass(drawPassDesc);
         pass.setPipeline(pipeline);
         pass.setBindGroup(0, bindgroup);
-        pass.draw(6);
+        pass.draw(6 * 6);
         pass.end();
         gpuDevice.queue.submit([cmd.finish()]);
     }
 
-    getModelViewMatrix(rotation: number) {
-        const viewMat = mat4.identity();
-        mat4.translate(viewMat, [0, 0, -56], viewMat);
+    getModelMatrix(rotation: number) {
+        const modelMat = mat4.identity();
 
         mat4.rotate(
-            viewMat,
-            [-1, 0, 0],
-            Math.PI * 0.33,
-            viewMat
+            modelMat,
+            [0, 1, 0],
+            Math.PI * Math.sin(rotation * 0.25),
+            //Math.PI * 0.2,
+            modelMat
         );
-        
+
         mat4.rotate(
-            viewMat,
-            [0, 0, 1],
-            rotation * 0.25,
-            viewMat
+            modelMat,
+            [1, 0, 0],
+            //Math.PI * Math.cos(rotation * 0.25),
+            Math.PI * 0.2,
+            modelMat
         );
+
+        let scale = 1 / 1.99;
+        mat4.scale(modelMat, [scale, scale, scale], modelMat);
+
+        let tr = 0;
+        mat4.translate(modelMat, [tr, tr, tr], modelMat);
+
+        return modelMat;
+    }
+
+    getViewMatrix() {
+        const viewMat = mat4.identity();
+
+        mat4.translate(viewMat, this.viewPosition, viewMat);
 
         return viewMat;
     }
@@ -176,22 +237,20 @@ export class Game extends App {
             far
         );
 
-        const s = aspect * 25.05;
+        const s = aspect * 48;
         const projMat2 = mat4.ortho(-s, s, -s, s, near, far);
 
-        return projMat2;
+        return projMat;
     }
 
     loadVolumeTexture(): Provider<Promise<GPUTexture>> {
-        const width = 180;
-        const height = 216;
-        const depth = 180;
-        const format: GPUTextureFormat = 'r8unorm';
+        const width = 256;
+        const height = 256;
+        const depth = 256;
+        const mipLevelCount = 4;
+        const format: GPUTextureFormat = 'r8uint';
         const blockLength = 1;
         const bytesPerBlock = 1;
-        const blocksWide = Math.ceil(width / blockLength);
-        const blocksHigh = Math.ceil(height / blockLength);
-        const bytesPerRow = blocksWide * bytesPerBlock;
         const dataPath =
             'assets/img/volume/generated.bin.gz';
 
@@ -201,20 +260,35 @@ export class Game extends App {
             return await new Response(dataStream).arrayBuffer();
         });
 
-        return this.gpuDevice.join([data]).map(async ([gpu, data]) => {
+        return this.gpuDevice.join([data]).map(async ([gpu, dataPromise]) => {
+            const data = await dataPromise;
+
             const texture = gpu.createTexture({
                 dimension: "3d",
                 size: [width, height, depth],
                 format: format,
                 usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+                mipLevelCount
             });
 
-            gpu.queue.writeTexture(
-                { texture },
-                await data,
-                { bytesPerRow: bytesPerRow, rowsPerImage: blocksHigh },
-                [width, height, depth]
-            );
+            let offset = 0;
+            for (let mipLevel = 0; mipLevel < mipLevelCount; mipLevel++) {
+                const mipWidth = width >> mipLevel;
+                const mipHeight = height >> mipLevel;
+                const mipDepth = depth >> mipLevel;
+
+                const blocksWide = Math.ceil(mipWidth / blockLength);
+                const rowsPerImage = Math.ceil(mipHeight / blockLength);
+                const bytesPerRow = blocksWide * bytesPerBlock;
+
+                gpu.queue.writeTexture(
+                    { texture, mipLevel },
+                    data,
+                    { offset, bytesPerRow, rowsPerImage },
+                    [mipWidth, mipHeight, mipDepth]
+                );
+                offset += bytesPerRow * rowsPerImage * mipDepth;
+            }
             return texture;
         });
     }
