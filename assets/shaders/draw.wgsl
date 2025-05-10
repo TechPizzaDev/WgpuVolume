@@ -295,12 +295,12 @@ fn raymarch(start: vec3f, dir: vec3f, initial: vec3<bool>, level: u32, threshold
     );
 }
 
-fn color_for_stop(count: u32, max: u32, num_steps: u32) -> vec4f {
-    return vec4f(vec3f(
-        f32(count) / f32(max) + 0.15, 
-        f32(count) / f32(num_steps) * 2.5f, 
-        f32(max) / f32(num_steps)) * 1.5f, 
-        1f);
+fn color_for_stop(hits: u32, steps: u32, max: u32) -> vec4f {
+    let rgb = vec3f(
+        f32(hits) / f32(steps), 
+        f32(hits) / f32(max), 
+        f32(steps) / f32(max));
+    return vec4f(rgb * 1.5f, 1f);
 }
 
 fn color_for_exit(mask: vec3<bool>, pos: vec3i) -> vec4f {
