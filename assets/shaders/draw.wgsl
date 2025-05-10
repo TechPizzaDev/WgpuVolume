@@ -34,10 +34,11 @@ override VolumeSize: i32 = 256;
 
 override ShowFaceExits: bool = false;
 
-const color_lookup_len: u32 = 5;
+const color_lookup_len: u32 = 6;
 const color_lookup = array<vec4f, color_lookup_len>(
-    vec4f(0, 0, 0.75, 0.5), // water
+    vec4f(0, 0, 0.75, 0.4), // water
     vec4f(0, 1, 0, 1), // grass
+    vec4f(160, 82, 45, 255) / 255f, // dirt
     vec4f(1, 1, 0, 1), // sand
     vec4f(0.55, 0.5, 0.5, 1), // stone,
     vec4f(1, 1, 1, 1), // snow
@@ -228,7 +229,7 @@ fn fragment_main(input: VertexOutput) -> @location(0) vec4f {
         //let side = march_result.side_dist;
         //let dist = min(min(side.x, side.y), side.z);
         
-        let exit_factor = pow(enter_diffuse.a, dist / 4);
+        let exit_factor = pow(enter_diffuse.a, dist / 16);
         return 
             enter_diffuse * enter_light +
             exit_diffuse * exit_light * vec4f(vec3f(exit_factor), 1);

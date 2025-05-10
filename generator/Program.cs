@@ -88,6 +88,7 @@ class Program
     {
         Water,
         Grass,
+        Dirt,
         Sand,
         Stone,
         Snow,
@@ -95,7 +96,7 @@ class Program
     }
 
     static void Test<f32, i32, F, G>(
-        ProgressBarBase pBar, Stream stream, byte[]? fullBuffer, 
+        ProgressBarBase pBar, Stream stream, byte[]? fullBuffer,
         int seed, int width, int height, int depth, G generator)
         where F : IFunctionList<f32, i32, F>
         where G : INoiseGenerator3D<f32, i32>
@@ -103,10 +104,11 @@ class Program
         Stopwatch w = new();
         w.Restart();
 
-        float scale = width / 16f;
+        float scale = width / 12f;
 
         var vSeed = F.Broad(seed);
-        var vIncX = F.Div(F.Add(F.Incremented_f32(), F.Broad(0f)), F.Broad(scale));
+        var vIncX = F.Add(F.Incremented_f32(), F.Broad(0f));
+        var sIncX = F.Div(vIncX, F.Broad(scale));
 
         var buffer32 = new int[Math.Max(G.UnitSize, width)];
         var buffer8 = new byte[buffer32.Length];
@@ -114,39 +116,79 @@ class Program
         using BinaryWriter writer = new(stream, Encoding.UTF8, true);
         int fullOffset = 0;
 
+        f32 sHeight = F.Broad(height / scale);
+
+        static i32 Broad(TileType type) => F.Broad((int)type);
+
         for (int z = 0; z < depth; z++)
         {
-            f32 vz = F.Broad(z / scale);
+            f32 sZ = F.Broad(z / scale);
+            f32 vZ = F.Broad((float)z);
 
             for (int y = 0; y < height; y++)
             {
-                f32 vy = F.Broad(y / scale);
+                f32 sY = F.Broad(y / scale);
+                f32 vY = F.Broad((float)y);
+                f32 pY = F.Broad((float)y / height);
 
                 for (int x = 0; x < width; x += G.UnitSize)
                 {
-                    f32 vx = F.Add(F.Broad(x / scale), vIncX);
+                    f32 sX = F.Add(F.Broad(x / scale), sIncX);
 
-                    f32 noise = generator.Gen(vx, vy, vz, vSeed);
+                    f32 vX = F.Add(F.Broad((float)x), vIncX);
 
-                    f32 scaled = F.Mul(F.Add(noise, F.Broad(1f)), F.Broad(0.5f));
+                    const int N_OCTAVES = 4;
+                    f32 noise = F.Broad(0f);
 
-                    i32 value = F.Broad((int) TileType.Stone);
+                    f32 amplitude = F.Broad(0.6f);
+                    f32 frequency = F.Broad(0.3f / scale);
+                    for (int i = 0; i < N_OCTAVES; i++)
+                    {
+                        f32 gen = generator.Gen(
+                            F.Mul(frequency, vX),
+                            F.Mul(frequency, vY),
+                            F.Mul(frequency, vZ),
+                            vSeed
+                        );
+                        f32 scaled = F.Mul(F.Add(gen, F.Broad(1f)), F.Broad(0.5f));
+                        noise = F.Add(noise, F.Mul(scaled, amplitude));
 
-                    value = F.Select(
-                        F.Cast_i32(F.LessThan(scaled, F.Broad(0.5f))), 
-                        value,
-                        F.Broad((int) TileType.Air));
+                        amplitude = F.Mul(amplitude, F.Broad(0.5f));
+                        frequency = F.Mul(frequency, F.Broad(2.0f));
+                    }
 
-                    value = F.Select(
-                        F.And(
-                            F.Cast_i32(F.LessThan(vy, F.Broad(height / scale * 0.5f))),
-                            F.Equal(value, F.Broad((int) TileType.Air))),
-                        F.Broad((int) TileType.Water),
-                        value
-                    );
+                    f32 fallStart = F.Add(pY, F.Broad(1.25f));
+                    f32 falloff = F.Mul(F.Broad(0.3f), F.Mul(fallStart, fallStart));
+                    noise = F.Mul(noise, falloff);
+                    
+                    float carveThreshold = 0.5f;
+                    float dirtThreshold = carveThreshold - 0.1f;
+                    float grassThreshold = carveThreshold - 0.025f;
+                    float sandThreshold = carveThreshold - 0.04f;
+
+                    f32 isAboveWater = F.GreaterThan(sY, F.Mul(sHeight, F.Broad(0.5f)));
+
+                    f32 isDirt = F.And(F.GreaterThan(noise, F.Broad(dirtThreshold)), isAboveWater);
+                    f32 isSand = F.GreaterThan(noise, F.Broad(sandThreshold));
+                    i32 tileSolid = F.Select(
+                        F.Cast_i32(isDirt),
+                        Broad(TileType.Dirt),
+                        F.Select(F.Cast_i32(isSand), Broad(TileType.Sand), Broad(TileType.Stone)));
+
+                    f32 isCarved = F.LessThan(noise, F.Broad(carveThreshold));
+                    i32 tileCarved = F.Select(F.Cast_i32(isCarved), tileSolid, Broad(TileType.Air));
+
+                    i32 isAir = F.Equal(tileCarved, Broad(TileType.Air));
+                    i32 isWater = F.AndNot(isAir, F.Cast_i32(isAboveWater));
+                    i32 tileWet = F.Select(isWater, Broad(TileType.Water), tileCarved);
+
+                    i32 canCover = F.Equal(tileWet, Broad(TileType.Dirt));
+                    f32 shouldCover = F.GreaterThanOrEqual(noise, F.Broad(grassThreshold));
+                    i32 isCovered = F.And(canCover, F.Cast_i32(shouldCover));
+                    i32 tileCover = F.Select(isCovered, Broad(TileType.Grass), tileWet);
 
                     // i32 conv = F.Convert_i32(F.Mul(scaled, F.Broad((float)(byte.MaxValue / 2.0))));
-                    F.Store(buffer32.AsSpan(x), value);
+                    F.Store(buffer32.AsSpan(x), tileCover);
                 }
 
                 Narrow(buffer32, buffer8);

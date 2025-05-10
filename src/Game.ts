@@ -195,21 +195,21 @@ export class Game extends App {
 
         mat4.rotate(
             modelMat,
-            [0, 1, 0],
-            Math.PI * Math.sin(rotation * 0.25),
-            //Math.PI * 0.2,
+            [1, 0, 0],
+            //Math.PI * Math.cos(rotation * 0.25),
+            Math.PI * 0.25,
             modelMat
         );
 
         mat4.rotate(
             modelMat,
-            [1, 0, 0],
-            //Math.PI * Math.cos(rotation * 0.25),
-            Math.PI * 0.2,
+            [0, 1, 0],
+            //Math.PI * Math.sin(rotation * 0.25),
+            Math.PI * 0.25,
             modelMat
         );
 
-        let scale = 1 / 1.99;
+        let scale = 1 / 2;
         mat4.scale(modelMat, [scale, scale, scale], modelMat);
 
         let tr = 0;
@@ -237,7 +237,7 @@ export class Game extends App {
             far
         );
 
-        const s = aspect * 48;
+        const s = aspect * 0.85;
         const projMat2 = mat4.ortho(-s, s, -s, s, near, far);
 
         return projMat;
