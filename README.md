@@ -1,13 +1,18 @@
-# pages
+# WgpuVolume
 
-To install dependencies:
+## Setup
 
+After checkout:
+```bash
+git submodule update --init --recursive
+```
+
+Install dependencies:
 ```bash
 bun install
 ```
 
-To run dev server:
-
+Run dev server:
 ```bash
 bun dev
 ```
