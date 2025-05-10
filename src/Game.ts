@@ -98,10 +98,10 @@ export class Game extends App {
                                 buffer: sunInfo,
                             },
                         },
-                        {
-                            binding: 2,
-                            resource: texture.createView(),
-                        },
+                        //{
+                        //    binding: 2,
+                        //    resource: texture.createView(),
+                        //},
                     ],
                 });
             });

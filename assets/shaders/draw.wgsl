@@ -242,6 +242,141 @@ fn fragment_main(input: VertexOutput) -> @location(0) vec4f {
     return color_for_exit(mi_exit.mask, mi_exit.coords);
 }
 
+const Primes: vec4i = vec4i(501125321, 1136930381, 1720413743, 1066037191);
+
+fn interpQuintic(t: vec3f) -> vec3f {
+    return ((t * t) * t) * (t * (t * 6 - vec3f(15)) + 10);
+}
+
+fn hashPrimes(seed: vec4i, x: vec4i, y: vec4i, z: vec4i) -> vec4i {
+    let hash = (seed ^ (x ^ (y ^ z))) * 0x27d4eb2d;
+    return (hash >> vec4u(15u)) ^ hash;
+}
+
+fn gradientDot(hash: vec4i, x: vec4f, y: vec4f, z: vec4f) -> vec4f {
+    let h = hash & vec4i(13);
+
+    //if h < 8 then x, else y
+    let u = select(y, x, h < vec4i(8));
+
+    //if h < 4 then y else if h is 12 or 14 then x else z
+    let v1 = select(z, x, h == vec4i(12));
+    let v2 = select(v1, y, h < vec4i(2));
+
+    //if h1 then -u else u
+    //if h2 then -v else v
+    let h1 = hash << vec4u(31);
+    let h2 = (hash & vec4i(2)) << vec4u(30);
+
+    return bitcast<vec4f>(bitcast<vec4i>(u) ^ h1) + bitcast<vec4f>(bitcast<vec4i>(v2) ^ h2);
+}
+
+fn perlinNoise3(p: vec3f, seed: i32) -> f32 {
+    let ps = floor(p);
+
+    let p0 = vec3i(ps) * Primes.xyz;
+    let p1 = p0 + Primes.xyz;
+    
+    let pf0 = p - ps;
+    let pf1 = pf0 - vec3f(1f);
+
+    let q = interpQuintic(pf0);
+
+    let hp0 = hashPrimes(
+        vec4i(seed), 
+        vec4i(p0.x, p1.x, p0.x, p1.x),
+        vec4i(p0.yy, p1.yy),
+        vec4i(p0.zzzz));
+
+    let hp1 = hashPrimes(
+        vec4i(seed), 
+        vec4i(p0.x, p1.x, p0.x, p1.x),
+        vec4i(p0.yy, p1.yy),
+        vec4i(p1.zzzz));
+
+    let gd0 = gradientDot(
+        hp0, 
+        vec4f(pf0.x, pf1.x, pf0.x, pf1.x),
+        vec4f(pf0.yy, pf1.yy),
+        vec4f(pf0.zzzz));
+
+    let gd1 = gradientDot(
+        hp1, 
+        vec4f(pf0.x, pf1.x, pf0.x, pf1.x),
+        vec4f(pf0.yy, pf1.yy),
+        vec4f(pf1.zzzz));
+
+    let m0 = mix(gd0.xz, gd0.yw, q.x);
+    let m1 = mix(gd1.xz, gd1.yw, q.x);
+
+    return (0.964921414852142333984375 * mix(
+        mix(m0.x, m0.y, q.y),
+        mix(m1.x, m1.y, q.y),
+        q.z));
+}
+
+fn falloff(y: f32, h: f32) -> f32 {
+    let fallStart: f32 = (y / h + 1.25);
+    return 0.3 * (fallStart * fallStart);
+}
+
+fn selectTile(p: vec3f, size: i32, seed: i32, amplitude: f32, frequency: f32) -> u32 {
+    const TileType_Water: u32 = 0;
+    const TileType_Grass: u32 = 1;
+    const TileType_Dirt: u32 = 2;
+    const TileType_Sand: u32 = 3;
+    const TileType_Stone: u32 = 4;
+    const TileType_Snow: u32 = 5;
+    const TileType_Air: u32 = 255;
+
+    const N_OCTAVES: i32 = 4;
+
+    let scale = f32(size) / 12.0;
+
+    var noise: f32 = 0f;
+    var amp = amplitude;
+    var freq: f32 = frequency / scale;
+
+    let carveThreshold: f32 = 0.5f;
+    let dirtThreshold: f32 = carveThreshold - 0.1f;
+    let grassThreshold: f32 = carveThreshold - 0.025f;
+    let sandThreshold: f32 = carveThreshold - 0.04f;
+
+    let fall = falloff(p.y, f32(size));
+    let isAboveWater: bool = (p.y) > (f32(size) * 0.5f);
+
+    for (var i = 0; i < N_OCTAVES; i++) {
+        let gen: f32 = perlinNoise3(freq * p, seed);
+        let scaled: f32 = (gen + 1.0) * 0.5;
+        noise += scaled * amp;
+
+        amp = (amp * 0.5);
+        freq = (freq * 2.0);
+    }
+    noise *= fall;
+    
+    let isDirt: bool = (noise > (dirtThreshold)) & isAboveWater;
+    let isSand: bool = (noise > (sandThreshold));
+    let tileSolid: u32 = select(
+        select(TileType_Stone, TileType_Sand, isSand),
+        TileType_Dirt,
+        isDirt);
+
+    let isCarved: bool = (noise < (carveThreshold));
+    let tileCarved: u32 = select(TileType_Air, tileSolid, isCarved);
+
+    let isAir: bool = (tileCarved == TileType_Air);
+    let isWater: bool = isAir & (!isAboveWater);
+    let tileWet: u32 = select(tileCarved, TileType_Water, isWater);
+
+    let canCover: bool = (tileWet == TileType_Dirt);
+    let shouldCover: bool = (noise >= grassThreshold);
+    let isCovered: bool = canCover & shouldCover;
+    let tileCover: u32 = select(tileWet, TileType_Grass, isCovered);
+
+    return tileCover;
+}
+
 fn raymarch(start: vec3f, dir: vec3f, initial: vec3<bool>, level: u32, threshold: f32) -> MarchResult {
     var mi = MarchIntersection(-1, initial, vec3i(start));
     var mi_enter = mi;
@@ -255,6 +390,9 @@ fn raymarch(start: vec3f, dir: vec3f, initial: vec3<bool>, level: u32, threshold
     var step_max = 0u;
     var i = 0u;
     
+    let amplitude = 0.6; // + sin(uniforms.time) * 0.1;
+    let offset = vec3f(0, 0, uniforms.time * 64);
+
     for (; i < (NumSteps >> level); i++) {
         let uv = mi.coords;
         let intersects = all(uv >= vec3i(0)) && all(uv < vec3i(VolumeSize >> level)); 
@@ -262,7 +400,10 @@ fn raymarch(start: vec3f, dir: vec3f, initial: vec3<bool>, level: u32, threshold
             break;
         }
 
-        let tile_id = textureLoad(myTexture, uv, level).r;
+        //let tile_id = textureLoad(myTexture, uv, level).r;
+        let size = VolumeSize >> level;
+        let tile_id = selectTile(vec3f(uv) + offset, size, 1234, amplitude, 0.3); //select(1u, 4u, perlinNoise3(vec3f(uv) / vec3f(scale), 1234) > 0.0);
+
         if (tile_id < color_lookup_len) {
             let old_id = mi.id;
             mi.id = i32(tile_id);
