@@ -108,43 +108,37 @@ fn vertex_main(
     let pos = positions[idx];
     let normal = normals[VertexIndex / 6];
 
-    let fake_normal = vec3f(0, 0, 1);
-    let fake_tangent = vec3f(1, 0, 0);
-    let fake_bitangent = cross(fake_normal, fake_tangent);
+    let face_normal = vec3f(0, 0, 1);
+    let face_tangent = vec3f(1, 0, 0);
 
-    let tangent_mat = mat3x3<f32>(
-        uniforms.modelMat[0].xyz,
-        uniforms.modelMat[1].xyz,
-        uniforms.modelMat[2].xyz,
-    );
+    let model_tangent = normalize((uniforms.modelMat * vec4f(face_tangent, 0)).xyz);
+    let model_normal = normalize((uniforms.modelMat * vec4f(face_normal, 0)).xyz);
+    let model_bitangent = cross(model_normal, model_tangent);
 
-    let model_tangent = normalize(tangent_mat * fake_tangent);
-    let model_bitangent = normalize(tangent_mat * fake_bitangent);
-    let model_normal = normalize(tangent_mat * fake_normal);
-    
-    let model_TBN = transpose(mat3x3<f32>(
+    let TBN_mat = mat3x3<f32>(
         model_tangent, 
         model_bitangent, 
-        model_normal));
+        model_normal);
 
-    let mvpMat = 
+    let inv_TBN_mat = transpose(TBN_mat);
+
+    let MVP_mat = 
         uniforms.projMat * 
         uniforms.viewMat * 
         uniforms.modelMat;
     
-    let clip_pos = mvpMat * vec4f(pos, 1f);
+    let clip_pos = MVP_mat * vec4f(pos, 1f);
     
     let world_pos = uniforms.modelMat * vec4f(pos, 1);
 
-    let tangent_view_pos = model_TBN * uniforms.view_pos.xyz;
-    let tangent_world_pos = model_TBN * world_pos.xyz;
+    let tangent_view_pos = inv_TBN_mat * uniforms.view_pos.xyz;
+    let tangent_world_pos = inv_TBN_mat * world_pos.xyz;
 
     return VertexOutput(
         clip_pos,
         normal,
-        //round(tangent_world_pos * f32(VolumeSize - 1) + f32(VolumeSize - 1) / 2),
-        tangent_world_pos,
-        (tangent_world_pos + tangent_view_pos) 
+        pos,
+        (tangent_view_pos - tangent_world_pos) 
     );
 }
 
@@ -179,7 +173,7 @@ fn compute_lighting(light_dir: vec3f, normal: vec3f) -> vec4f {
 @fragment
 fn fragment_main(input: VertexOutput) -> @location(0) vec4f {
     let threshold = (0.35 + (sin(uniforms.time * 1.0) + 1) * 0.15);
-    let startPos = (input.tangent_world_pos * f32(VolumeSize - 1) + f32(VolumeSize - 1) / 2);
+    let startPos = (input.tangent_world_pos + 1) * f32(VolumeSize / 2 - 1);
 
     var level = 0;
     var rayPos = startPos;
@@ -222,9 +216,7 @@ fn fragment_main(input: VertexOutput) -> @location(0) vec4f {
         let exit_light = compute_lighting(sun.direction, exit_normal.xyz);
         let exit_diffuse = color_lookup[select(mi_exit.id, mi_enter.id, mi_exit.id == -1)];
     
-        //return vec4f(ray_to_tex(exit_normal.xyz), 1f);
-
-        // TODO: fix distance
+        // TODO: fix distance (to face)
         let dist = distance(startPos / f32(1u << u32(level)) - 0.5, vec3f(mi_exit.coords));
         //let side = march_result.side_dist;
         //let dist = min(min(side.x, side.y), side.z);
@@ -391,7 +383,8 @@ fn raymarch(start: vec3f, dir: vec3f, initial: vec3<bool>, level: u32, threshold
     var i = 0u;
     
     let amplitude = 0.6; // + sin(uniforms.time) * 0.1;
-    let offset = vec3f(0, 0, uniforms.time * 64);
+    let frequency = 0.3; // + cos(uniforms.time) * 0.1;
+    let offset = vec3f(0, 0, floor(uniforms.time * 64));
 
     for (; i < (NumSteps >> level); i++) {
         let uv = mi.coords;
@@ -402,7 +395,7 @@ fn raymarch(start: vec3f, dir: vec3f, initial: vec3<bool>, level: u32, threshold
 
         //let tile_id = textureLoad(myTexture, uv, level).r;
         let size = VolumeSize >> level;
-        let tile_id = selectTile(vec3f(uv) + offset, size, 1234, amplitude, 0.3); //select(1u, 4u, perlinNoise3(vec3f(uv) / vec3f(scale), 1234) > 0.0);
+        let tile_id = selectTile(vec3f(uv) + offset, size, 1234, amplitude, frequency);
 
         if (tile_id < color_lookup_len) {
             let old_id = mi.id;
