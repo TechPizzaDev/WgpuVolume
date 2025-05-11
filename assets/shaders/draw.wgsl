@@ -22,6 +22,7 @@ struct NoiseUniforms {
     amplitude: f32,
     frequency: f32,
     octaves: i32,
+    level_of_detail: i32,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -197,7 +198,7 @@ fn fragment_main(input: VertexOutput) -> @location(0) vec4f {
 
     //return vec4f(ray_to_tex(view_dir), 1);
 
-    var level = 0;
+    var level = u_noise.level_of_detail;
     var rayPos = startPos;
     let rayDir = view_dir;
 
@@ -400,9 +401,10 @@ fn raymarch(start: vec3f, dir: vec3f, initial: vec3<bool>, level: u32, threshold
     var step_max = 0u;
     var i = 0u;
     
+    let size = VolumeSize >> level;
     let amplitude = u_noise.amplitude;
     let frequency = u_noise.frequency;
-    let offset = u_noise.offset.xyz;
+    let offset = u_noise.offset.xyz / f32(VolumeSize / size);
 
     for (; i < (NumSteps >> level); i++) {
         let uv = mi.coords;
@@ -412,7 +414,6 @@ fn raymarch(start: vec3f, dir: vec3f, initial: vec3<bool>, level: u32, threshold
         }
 
         //let tile_id = textureLoad(myTexture, uv, level).r;
-        let size = VolumeSize >> level;
         let tile_id = selectTile(vec3f(uv) + offset, size, 1234, amplitude, frequency);
 
         if (tile_id < color_lookup_len) {
