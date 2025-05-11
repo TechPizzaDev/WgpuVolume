@@ -21,6 +21,7 @@ struct NoiseUniforms {
     offset: vec4f,
     amplitude: f32,
     frequency: f32,
+    octaves: i32,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -342,8 +343,6 @@ fn selectTile(p: vec3f, size: i32, seed: i32, amplitude: f32, frequency: f32) ->
     const TileType_Snow: u32 = 5;
     const TileType_Air: u32 = 255;
 
-    const N_OCTAVES: i32 = 4;
-
     var noise: f32 = 0f;
     var amp = amplitude;
     var freq: f32 = frequency / f32(size);
@@ -356,7 +355,7 @@ fn selectTile(p: vec3f, size: i32, seed: i32, amplitude: f32, frequency: f32) ->
     let fall = falloff(p.y, f32(size));
     let isAboveWater: bool = (p.y) > (f32(size) * 0.5f);
 
-    for (var i = 0; i < N_OCTAVES; i++) {
+    for (var i = 0; i < u_noise.octaves; i++) {
         let gen: f32 = perlinNoise3(freq * p, seed);
         let scaled: f32 = (gen + 1.0) * 0.5;
         noise += scaled * amp;

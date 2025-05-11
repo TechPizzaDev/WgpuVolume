@@ -28,6 +28,7 @@ export class Game extends App {
         offset: { x: 0, y: 0, z: 0 },
         amplitude: 0.6,
         frequency: 3.6,
+        octaves: 4,
     };
 
     u_camera = {
@@ -44,6 +45,7 @@ export class Game extends App {
         pane_noise.addBinding(this.u_noise, "offset");
         pane_noise.addBinding(this.u_noise, "amplitude", { min: 0 });
         pane_noise.addBinding(this.u_noise, "frequency", { min: 0 });
+        pane_noise.addBinding(this.u_noise, "octaves", { step: 1, min: 1, max: 8 })
 
         const pane_camera = this.pane_settings.addFolder({ title: "Camera", expanded: false });
         pane_camera.addBinding(this.u_camera, "ortho");
@@ -217,8 +219,10 @@ export class Game extends App {
         gpuDevice.queue.writeBuffer(this.noiseInfoBuffer.get(), 0, new Float32Array([
             u_offset.x, u_offset.y, u_offset.z, 0,
             u_noise.amplitude,
-            u_noise.frequency
+            u_noise.frequency,
         ]));
+
+        gpuDevice.queue.writeBuffer(this.noiseInfoBuffer.get(), 4 * 6, new Int32Array([u_noise.octaves]));
     }
 
     override async draw(canvasTexture: Provider<GPUTexture>) {
