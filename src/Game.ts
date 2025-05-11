@@ -30,6 +30,7 @@ export class Game extends App {
         frequency: 3.6,
         octaves: 4,
         level_of_detail: 0,
+        generate: true,
     };
 
     u_camera = {
@@ -48,6 +49,7 @@ export class Game extends App {
         pane_noise.addBinding(this.u_noise, "frequency", { min: 0 });
         pane_noise.addBinding(this.u_noise, "octaves", { step: 1, min: 1, max: 8 });
         pane_noise.addBinding(this.u_noise, "level_of_detail", { label: "level", step: 1, min: 0, max: 8 });
+        pane_noise.addBinding(this.u_noise, "generate");
 
         const pane_camera = this.pane_settings.addFolder({ title: "Camera", expanded: false });
         pane_camera.addBinding(this.u_camera, "ortho");
@@ -116,7 +118,7 @@ export class Game extends App {
         }))
 
         this.noiseInfoBuffer = this.gpuDevice.map(gpu => gpu.createBuffer({
-            size: (4 * 4) * 2,
+            size: (4 * 4) + 4 * 8,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         }))
 
@@ -148,10 +150,10 @@ export class Game extends App {
                                 buffer: noiseInfo,
                             },
                         },
-                        //{
-                        //    binding: 3,
-                        //    resource: texture.createView(),
-                        //},
+                        {
+                            binding: 3,
+                            resource: texture.createView(),
+                        },
                     ],
                 });
             });
@@ -226,7 +228,8 @@ export class Game extends App {
 
         gpuDevice.queue.writeBuffer(this.noiseInfoBuffer.get(), 4 * 6, new Int32Array([
             u_noise.octaves,
-            u_noise.level_of_detail
+            u_noise.level_of_detail,
+            u_noise.generate ? 1 : 0
         ]));
     }
 

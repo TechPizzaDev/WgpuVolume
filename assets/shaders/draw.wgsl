@@ -23,6 +23,7 @@ struct NoiseUniforms {
     frequency: f32,
     octaves: i32,
     level_of_detail: i32,
+    generate: i32,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -413,8 +414,12 @@ fn raymarch(start: vec3f, dir: vec3f, initial: vec3<bool>, level: u32, threshold
             break;
         }
 
-        //let tile_id = textureLoad(myTexture, uv, level).r;
-        let tile_id = selectTile(vec3f(uv) + offset, size, 1234, amplitude, frequency);
+        var tile_id = 0u;
+        if (u_noise.generate == 0) {
+            tile_id = textureLoad(myTexture, uv, level).r;
+        } else {
+            tile_id = selectTile(vec3f(uv) + offset, size, 1234, amplitude, frequency);
+        }
 
         if (tile_id < color_lookup_len) {
             let old_id = mi.id;
