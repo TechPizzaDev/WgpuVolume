@@ -1,6 +1,9 @@
-import { mat4, type Vec3 } from "wgpu-matrix";
+import { mat4, vec3, type Vec3 } from "wgpu-matrix";
 import { App, type PresentationDescriptor } from "./App";
 import { ValueProvider, type Provider } from "./Provider";
+
+import { Pane } from 'tweakpane';
+import * as EssentialsPlugin from '@tweakpane/plugin-essentials';
 
 export class Game extends App {
     totalTime: number = 0;
@@ -14,12 +17,44 @@ export class Game extends App {
     drawPipeline: Provider<Promise<GPURenderPipeline>>;
     drawUniformBuffer: Provider<GPUBuffer>;
     sunInfoBuffer: Provider<GPUBuffer>;
+    noiseInfoBuffer: Provider<GPUBuffer>;
     drawBindGroup: Provider<Promise<GPUBindGroup>>;
+
+    pane_settings: Pane;
+    pane_fps: Pane;
+    blade_fps_graph: EssentialsPlugin.FpsGraphBladeApi;
+
+    u_noise = {
+        offset: { x: 0, y: 0, z: 0 },
+        amplitude: 0.6,
+        frequency: 3.6,
+    };
+
+    u_camera = {
+        ortho: false
+    };
 
     constructor(
         gpuDevice: Provider<GPUDevice>,
         presentation: Provider<PresentationDescriptor>) {
         super(gpuDevice, presentation);
+
+        this.pane_settings = new Pane({ container: document.getElementById("settings-pane")! });
+        const pane_noise = this.pane_settings.addFolder({ title: "Noise" });
+        pane_noise.addBinding(this.u_noise, "offset");
+        pane_noise.addBinding(this.u_noise, "amplitude", { min: 0 });
+        pane_noise.addBinding(this.u_noise, "frequency", { min: 0 });
+
+        const pane_camera = this.pane_settings.addFolder({ title: "Camera", expanded: false });
+        pane_camera.addBinding(this.u_camera, "ortho");
+
+        this.pane_fps = new Pane({ container: document.getElementById("fps-pane")! });
+        this.pane_fps.registerPlugin(EssentialsPlugin);
+        this.blade_fps_graph = this.pane_fps.addBlade({
+            view: 'fpsgraph',
+            label: "",
+            rows: 1.25,
+        }) as EssentialsPlugin.FpsGraphBladeApi;
 
         this.sampler = gpuDevice.map(gpu => gpu.createSampler({
             magFilter: "nearest",
@@ -76,12 +111,17 @@ export class Game extends App {
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         }))
 
+        this.noiseInfoBuffer = this.gpuDevice.map(gpu => gpu.createBuffer({
+            size: (4 * 4) * 2,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        }))
+
         const volumeTexture = this.loadVolumeTexture();
 
         this.drawBindGroup = this.gpuDevice
-            .join([this.drawPipeline, this.drawUniformBuffer, this.sunInfoBuffer, this.sampler, volumeTexture])
+            .join([this.drawPipeline, this.drawUniformBuffer, this.sunInfoBuffer, this.noiseInfoBuffer, this.sampler, volumeTexture])
             .map(async args => {
-                const [gpu, pipeline, uniform, sunInfo, sampler, texture] = await Promise.all(args);
+                const [gpu, pipeline, uniform, sunInfo, noiseInfo, sampler, texture] = await Promise.all(args);
 
                 return gpu.createBindGroup({
                     layout: pipeline.getBindGroupLayout(0),
@@ -98,8 +138,14 @@ export class Game extends App {
                                 buffer: sunInfo,
                             },
                         },
+                        {
+                            binding: 2,
+                            resource: {
+                                buffer: noiseInfo,
+                            },
+                        },
                         //{
-                        //    binding: 2,
+                        //    binding: 3,
                         //    resource: texture.createView(),
                         //},
                     ],
@@ -120,6 +166,8 @@ export class Game extends App {
     }
 
     override async update(deltaTime: number) {
+        this.blade_fps_graph.begin();
+
         this.totalTime += deltaTime;
         const gpuDevice = this.gpuDevice.get();
 
@@ -153,13 +201,23 @@ export class Game extends App {
         i += 4 * 4;
         gpuDevice.queue.writeBuffer(uniform, i, new Float32Array([0, 0, viewTexture.width, viewTexture.height]));
         i += 4 * 4;
-        gpuDevice.queue.writeBuffer(uniform, i, new Float32Array([this.totalTime]));
+        gpuDevice.queue.writeBuffer(uniform, i, new Float32Array([
+            this.totalTime,
+            this.u_camera.ortho ? 1 : 0]));
         i += 4 * 4;
 
         gpuDevice.queue.writeBuffer(this.sunInfoBuffer.get(), 0, new Float32Array([
             0, 0, 1, 0,
             1, 1, 1, 0,
             0.1, 0.1, 0.1, 0,
+        ]));
+
+        const u_noise = this.u_noise;
+        const u_offset = u_noise.offset;
+        gpuDevice.queue.writeBuffer(this.noiseInfoBuffer.get(), 0, new Float32Array([
+            u_offset.x, u_offset.y, u_offset.z, 0,
+            u_noise.amplitude,
+            u_noise.frequency
         ]));
     }
 
@@ -188,6 +246,8 @@ export class Game extends App {
         pass.draw(6 * 6);
         pass.end();
         gpuDevice.queue.submit([cmd.finish()]);
+
+        this.blade_fps_graph.end();
     }
 
     getModelMatrix(rotation: number) {
@@ -204,8 +264,8 @@ export class Game extends App {
         mat4.rotate(
             modelMat,
             [0, 1, 0],
-            //Math.PI * Math.sin(rotation * 0.25),
-            Math.PI * 0.25,
+            Math.PI * Math.sin(rotation * 0.25),
+            //Math.PI * 0.25,
             modelMat
         );
 
@@ -237,10 +297,14 @@ export class Game extends App {
             far
         );
 
-        const s = aspect * 0.85;
-        const projMat2 = mat4.ortho(-s, s, -s, s, near, far);
-
-        return projMat;
+        if (this.u_camera.ortho) {
+            const s = aspect * 0.85;
+            const projMat2 = mat4.ortho(-s, s, -s, s, near, far);
+            return projMat2;
+        }
+        else {
+            return projMat;
+        }
     }
 
     loadVolumeTexture(): Provider<Promise<GPUTexture>> {

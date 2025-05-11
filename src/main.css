@@ -12,3 +12,15 @@ body {
     width: 100%;
     height: 100%;
 }
+
+#settings-pane {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+}
+
+#fps-pane {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+}

@@ -1,11 +1,14 @@
 {
   "name": "pages",
   "dependencies": {
+    "@tweakpane/plugin-essentials": "^0.2.1",
+    "tweakpane": "^4.0.5",
     "wgpu-matrix": "^3.4.0"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@webgpu/types": "^0.1.60"
+    "@webgpu/types": "^0.1.60",
+    "@tweakpane/core": "^2.0.5"
   },
   "peerDependencies": {
     "typescript": "^5.7.3"

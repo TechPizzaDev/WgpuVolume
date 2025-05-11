@@ -8,6 +8,7 @@ struct Uniforms {
     view_pos: vec4f,
     viewport: vec4f,
     time: f32,
+    ortho: i32,
 }
 
 struct SunUniforms {
@@ -16,21 +17,30 @@ struct SunUniforms {
     ambient: vec3f,
 }
 
-@group(0) @binding(0) var<uniform> uniforms: Uniforms;
-@group(0) @binding(1) var<uniform> sun: SunUniforms;
-//@group(0) @binding(1) var mySampler: sampler;
-@group(0) @binding(2) var myTexture: texture_3d<u32>;
-
-struct VertexOutput {
-    @builtin(position) position: vec4f,
-    @location(0) normal: vec3f,
-    @location(1) tangent_world_pos: vec3f,
-    @location(2) tangent_ray_dir: vec3f,
+struct NoiseUniforms {
+    offset: vec4f,
+    amplitude: f32,
+    frequency: f32,
 }
 
-override NumSteps: u32 = 600;
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
+@group(0) @binding(1) var<uniform> sun: SunUniforms;
+@group(0) @binding(2) var<uniform> u_noise: NoiseUniforms;
+//@group(0) @binding(1) var mySampler: sampler;
+@group(0) @binding(3) var myTexture: texture_3d<u32>;
+
+struct VertexOutput {
+    @builtin(position) frag_pos: vec4f,
+    @location(0) normal: vec3f,
+    @location(1) world_pos: vec3f,
+    @location(2) tangent_sun_dir: vec3f, 
+    @location(3) tangent_view_pos: vec3f,
+    @location(4) tangent_frag_pos: vec3f,
+}
 
 override VolumeSize: i32 = 256;
+
+override NumSteps: u32 = 512;
 
 override ShowFaceExits: bool = false;
 
@@ -138,7 +148,10 @@ fn vertex_main(
         clip_pos,
         normal,
         pos,
-        (tangent_view_pos - tangent_world_pos) 
+        
+        inv_TBN_mat * sun.direction,
+        inv_TBN_mat * uniforms.view_pos.xyz,
+        inv_TBN_mat * world_pos.xyz,
     );
 }
 
@@ -172,12 +185,20 @@ fn compute_lighting(light_dir: vec3f, normal: vec3f) -> vec4f {
 
 @fragment
 fn fragment_main(input: VertexOutput) -> @location(0) vec4f {
+
+    let light_dir = input.tangent_sun_dir;
+    let view_dir = normalize(
+        input.tangent_view_pos + 
+        select(input.tangent_frag_pos, vec3f(0), uniforms.ortho != 0));  
+
     let threshold = (0.35 + (sin(uniforms.time * 1.0) + 1) * 0.15);
-    let startPos = (input.tangent_world_pos + 1) * f32(VolumeSize / 2 - 1);
+    let startPos = (input.world_pos + 1) * (f32(VolumeSize - 1) / 2);
+
+    //return vec4f(ray_to_tex(view_dir), 1);
 
     var level = 0;
     var rayPos = startPos;
-    let rayDir = input.tangent_ray_dir;
+    let rayDir = view_dir;
 
     var march_result: MarchResult;
     while (level >= 0) {
@@ -207,13 +228,13 @@ fn fragment_main(input: VertexOutput) -> @location(0) vec4f {
         let is_same = all(mi_enter.coords == mi_exit.coords);
 
         let enter_face = sign(rayDir) * vec3f(mi_enter.mask);
-        let enter_normal = -normalize(uniforms.modelMat * vec4f(enter_face, 0));
-        let enter_light = compute_lighting(sun.direction, enter_normal.xyz);
+        let enter_normal = -normalize(enter_face.xyz);
+        let enter_light = compute_lighting(input.tangent_sun_dir, enter_normal.xyz);
         let enter_diffuse = select(color_lookup[mi_enter.id], vec4f(0, 0, 0, 1), is_same);
         
         let exit_face = sign(rayDir) * vec3f(mi_exit.mask);
-        let exit_normal = -normalize(uniforms.modelMat * vec4f(exit_face, 0));
-        let exit_light = compute_lighting(sun.direction, exit_normal.xyz);
+        let exit_normal = -normalize(exit_face.xyz);
+        let exit_light = compute_lighting(input.tangent_sun_dir, exit_normal.xyz);
         let exit_diffuse = color_lookup[select(mi_exit.id, mi_enter.id, mi_exit.id == -1)];
     
         // TODO: fix distance (to face)
@@ -323,11 +344,9 @@ fn selectTile(p: vec3f, size: i32, seed: i32, amplitude: f32, frequency: f32) ->
 
     const N_OCTAVES: i32 = 4;
 
-    let scale = f32(size) / 12.0;
-
     var noise: f32 = 0f;
     var amp = amplitude;
-    var freq: f32 = frequency / scale;
+    var freq: f32 = frequency / f32(size);
 
     let carveThreshold: f32 = 0.5f;
     let dirtThreshold: f32 = carveThreshold - 0.1f;
@@ -382,9 +401,9 @@ fn raymarch(start: vec3f, dir: vec3f, initial: vec3<bool>, level: u32, threshold
     var step_max = 0u;
     var i = 0u;
     
-    let amplitude = 0.6; // + sin(uniforms.time) * 0.1;
-    let frequency = 0.3; // + cos(uniforms.time) * 0.1;
-    let offset = vec3f(0, 0, floor(uniforms.time * 64));
+    let amplitude = u_noise.amplitude;
+    let frequency = u_noise.frequency;
+    let offset = u_noise.offset.xyz;
 
     for (; i < (NumSteps >> level); i++) {
         let uv = mi.coords;
