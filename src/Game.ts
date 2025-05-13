@@ -29,7 +29,7 @@ export class Game extends App {
         amplitude: 0.6,
         frequency: 3.6,
         octaves: 4,
-        level_of_detail: 0,
+        level_of_detail: 2,
         generate: true,
     };
 
@@ -332,8 +332,12 @@ export class Game extends App {
 
         const data = this.fetchProvider(dataPath).map(async resp => {
             const response = await resp;
-            const dataStream = response.body!.pipeThrough(new DecompressionStream('gzip'));
-            return await new Response(dataStream).arrayBuffer();
+            try {
+                const dataStream = response.body!.pipeThrough(new DecompressionStream('gzip'));
+                return await new Response(dataStream).arrayBuffer();
+            } catch {
+                return new Uint8Array(0);
+            }
         });
 
         return this.gpuDevice.join([data]).map(async ([gpu, dataPromise]) => {
@@ -346,6 +350,10 @@ export class Game extends App {
                 usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
                 mipLevelCount
             });
+
+            if (data.byteLength == 0) {
+                return texture;
+            }
 
             let offset = 0;
             for (let mipLevel = 0; mipLevel < mipLevelCount; mipLevel++) {
