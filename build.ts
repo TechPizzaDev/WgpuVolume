@@ -39,5 +39,6 @@ console.table(output.outputs.map(artifact => {
 }));
 
 for (const dir of includeDirs) {
-    await cp(dir, fullOutdir, { recursive: true });
+    const dst = path.join(fullOutdir, path.basename(dir));
+    await cp(dir, dst, { recursive: true });
 }
