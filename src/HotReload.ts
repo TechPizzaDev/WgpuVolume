@@ -10,17 +10,22 @@ function logInfo(...params: any[]) {
     console.log(`[HotReload]`, ...params);
 }
 
+function logWarn(...params: any[]) {
+    console.warn(`[HotReload]`, ...params);
+}
+
 function logError(...params: any[]) {
     console.error(`[HotReload]`, ...params);
 }
 
 export function connect() {
-    const wsUrl = new URL(WS_PATH, `ws://${location.host}`);
+    const wsProto = document.location.protocol == "https:" ? "wss:" : "ws:";
+    const wsUrl = new URL(WS_PATH, `${wsProto}//${location.host}`);
     logInfo(`Connecting to \"${wsUrl}\"...`);
 
     const socket = new WebSocket(wsUrl);
     socket.onopen = () => {
-        logInfo("Connected.");
+        logInfo("Connection opened.");
     };
     socket.onmessage = (msg) => {
         const cmd: HotReloadCmd = JSON.parse(msg.data);
@@ -30,8 +35,20 @@ export function connect() {
                 break;
 
             default:
-                logError("Unknown command:", msg.data);
+                logError(`Unknown message command (kind ${cmd.kind}):`, msg.data);
                 break;
+        }
+    };
+    socket.onclose = (evt) => {
+        if (evt.wasClean) {
+            logInfo(`Connection closed (code ${evt.code}):`, evt.reason);
+        } else {
+            logWarn(`Connection closed unexpectedly (code ${evt.code}):`, evt.reason);
+        }
+    };
+    socket.onerror = (evt) => {
+        if (socket.readyState == 1) {
+            logError("Connecton error:", evt);
         }
     };
 }
