@@ -15,6 +15,7 @@
   },
   "scripts": {
     "predev": "bun run prepare.ts",
-    "dev": "bun run --hot dev.ts"
+    "dev": "bun run --hot dev.ts",
+    "build": "bun run build.ts"
   }
 }
